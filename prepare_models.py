@@ -3,6 +3,7 @@ import torch
 from torch.autograd import Variable as V
 import torchvision.models as models
 from torch.nn import functional as F
+import pickle
 
 
 def prep_models(context_model='resnet18', body_model='resnet18', model_dir='./'):
@@ -19,16 +20,14 @@ def prep_models(context_model='resnet18', body_model='resnet18', model_dir='./')
     os.system(download_command)
 
   save_file = os.path.join(model_dir,'%s_places365_py36.pth.tar' % context_model)
-  from functools import partial
-  import pickle
-  pickle.load = partial(pickle.load, encoding="latin1")
-  pickle.Unpickler = partial(pickle.Unpickler, encoding="latin1")
-  model = torch.load(model_file, map_location=lambda storage, loc: storage)
+  
+  # 使用新的加载方式
+  model = torch.load(model_file, map_location='cpu', pickle_module=pickle)
   torch.save(model, save_file)
 
   # create the network architecture
   model_context = models.__dict__[context_model](num_classes=365)
-  checkpoint = torch.load(save_file, map_location=lambda storage, loc: storage) # model trained in GPU could be deployed in CPU machine like this!
+  checkpoint = torch.load(save_file, map_location='cpu', pickle_module=pickle)
   if context_model == 'densenet161':
     state_dict = {str.replace(k,'module.',''): v for k,v in checkpoint['state_dict'].items()}
     state_dict = {str.replace(k,'norm.','norm'): v for k,v in state_dict.items()}
@@ -38,7 +37,7 @@ def prep_models(context_model='resnet18', body_model='resnet18', model_dir='./')
     state_dict = {str.replace(k,'normbias','norm.bias'): v for k,v in state_dict.items()}
     state_dict = {str.replace(k,'convweight','conv.weight'): v for k,v in state_dict.items()}
   else:
-    state_dict = {str.replace(k,'module.',''): v for k,v in checkpoint['state_dict'].items()} # the data parallel layer will add 'module' before each layer name
+    state_dict = {str.replace(k,'module.',''): v for k,v in checkpoint['state_dict'].items()}
   model_context.load_state_dict(state_dict)
   model_context.eval()
   model_context.cpu()
