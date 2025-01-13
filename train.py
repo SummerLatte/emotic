@@ -3,22 +3,18 @@ import os
 
 import torch
 import torch.nn as nn 
-import torch.nn.functional as F
 import torch.optim as optim 
-from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader 
-import torchvision.models as models
 from torchvision import transforms
 from tensorboardX import SummaryWriter
 
 from emotic import Emotic 
 from emotic_dataset import Emotic_PreDataset
-from loss import DiscreteLoss, ContinuousLoss_SL1, ContinuousLoss_L2
 from prepare_models import prep_models
-from test import test_data, test_scikit_ap, test_vad
+from test import test_data, test_scikit_ap
 
 
-def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_loss, cont_loss, train_writer, val_writer, model_path, args, ind2cat, ind2vad):
+def train_data(opt, scheduler, models, device, train_loader, val_loader, train_writer, val_writer, model_path, args, ind2cat, ind2vad):
     '''
     Training emotic model on train data using train loader.
     :param opt: Optimizer object.
@@ -27,8 +23,6 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
     :param device: Torch device. Used to send tensors to GPU if available. 
     :param train_loader: Dataloader iterating over train dataset. 
     :param val_loader: Dataloader iterating over validation dataset. 
-    :param disc_loss: Discrete loss criterion. Loss measure between discrete emotion categories predictions and the target emotion categories. 
-    :param cont_loss: Continuous loss criterion. Loss measure between continuous VAD emotion predictions and the target VAD values.
     :param train_writer: SummaryWriter object to save train logs. 
     :param val_writer: SummaryWriter object to save validation logs. 
     :param model_path: Directory path to save the models after training. 
@@ -36,6 +30,8 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
     :param ind2cat: Dictionary converting integer index to categorical emotion.
     :param ind2vad: Dictionary converting integer index to continuous emotion dimension.
     '''
+
+    criterion = nn.BCELoss()
     
     model_context, model_body, emotic_model = models
 
@@ -71,14 +67,9 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
             pred_body = model_body(images_body)
 
             pred_cat, pred_cont = emotic_model(pred_context, pred_body)
-            cat_loss_batch = disc_loss(pred_cat, labels_cat)
-            cont_loss_batch = cont_loss(pred_cont * 10, labels_cont * 10)
-
-            loss = (args.cat_loss_weight * cat_loss_batch) + (args.cont_loss_weight * cont_loss_batch)
+            loss = criterion(pred_cat, labels_cat)
             
             running_loss += loss.item()
-            running_cat_loss += cat_loss_batch.item()
-            running_cont_loss += cont_loss_batch.item()
             
             # 收集训练阶段的预测和标签
             train_cat_preds.append(pred_cat.detach().cpu().numpy())
@@ -98,18 +89,12 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
             train_writer.add_scalar('metrics/mAP', train_ap.mean(), e)
 
         train_writer.add_scalar('losses/total_loss', running_loss, e)
-        train_writer.add_scalar('losses/categorical_loss', running_cat_loss, e)
-        train_writer.add_scalar('losses/continuous_loss', running_cont_loss, e)
         
         running_loss = 0.0 
-        running_cat_loss = 0.0 
-        running_cont_loss = 0.0 
         
         # 用于存储验证阶段的预测和标签
         val_cat_preds = []
         val_cat_labels = []
-        val_cont_preds = []
-        val_cont_labels = []
         
         emotic_model.eval()
         model_context.eval()
@@ -127,38 +112,32 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
                 pred_body = model_body(images_body)
 
                 pred_cat, pred_cont = emotic_model(pred_context, pred_body)
-                cat_loss_batch = disc_loss(pred_cat, labels_cat)
-                cont_loss_batch = cont_loss(pred_cont * 10, labels_cont * 10)
-                loss = (args.cat_loss_weight * cat_loss_batch) + (args.cont_loss_weight * cont_loss_batch)
+                loss = criterion(pred_cat, labels_cat)
                 
                 running_loss += loss.item()
-                running_cat_loss += cat_loss_batch.item()
-                running_cont_loss += cont_loss_batch.item()
                 
                 # 收集验证阶段的预测和标签
                 val_cat_preds.append(pred_cat.cpu().numpy())
                 val_cat_labels.append(labels_cat.cpu().numpy())
-                val_cont_preds.append(pred_cont.cpu().numpy())
-                val_cont_labels.append(labels_cont.cpu().numpy())
 
         # 计算验证阶段的mAP和VAD
         val_cat_preds = np.concatenate(val_cat_preds, axis=0).transpose()
         val_cat_labels = np.concatenate(val_cat_labels, axis=0).transpose()
-        val_cont_preds = np.concatenate(val_cont_preds, axis=0).transpose()
-        val_cont_labels = np.concatenate(val_cont_labels, axis=0).transpose()
 
         if e % 1 == 0:
             print ('epoch = %d validation loss = %.4f cat loss = %.4f cont loss = %.4f ' %(e, running_loss, running_cat_loss, running_cont_loss))
             print('Validation metrics:')
             val_ap = test_scikit_ap(val_cat_preds, val_cat_labels, ind2cat)
-            test_vad(val_cont_preds, val_cont_labels, ind2vad)
             val_writer.add_scalar('metrics/mAP', val_ap.mean(), e)
+            
+            # 记录当前学习率
+            current_lr = opt.param_groups[0]['lr']
+            print(f'Current learning rate: {current_lr}')
+            train_writer.add_scalar('learning_rate', current_lr, e)
         
         val_writer.add_scalar('losses/total_loss', running_loss, e)
-        val_writer.add_scalar('losses/categorical_loss', running_cat_loss, e)
-        val_writer.add_scalar('losses/continuous_loss', running_cont_loss, e)
         
-        scheduler.step()
+        scheduler.step(running_loss)  # 使用验证loss来调整学习率
     
     print ('completed training')
     emotic_model.to("cpu")
@@ -197,8 +176,16 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     print ('val ', 'context ', val_context.shape, 'body', val_body.shape, 'cat ', val_cat.shape, 'cont', val_cont.shape)
 
     # Initialize Dataset and DataLoader 
-    train_transform = transforms.Compose([transforms.ToPILImage(),transforms.RandomHorizontalFlip(), transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4), transforms.ToTensor()])
-    test_transform = transforms.Compose([transforms.ToPILImage(),transforms.ToTensor()])
+    train_transform = transforms.Compose([transforms.ToPILImage(),
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                               std=[0.229, 0.224, 0.225])])
+    test_transform = transforms.Compose([transforms.ToPILImage(),
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                               std=[0.229, 0.224, 0.225])])
 
     train_dataset = Emotic_PreDataset(train_context, train_body, train_cat, train_cont, train_transform, context_norm, body_norm)
     val_dataset = Emotic_PreDataset(val_context, val_body, val_cat, val_cont, test_transform, context_norm, body_norm)
@@ -209,10 +196,10 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     print ('train loader ', len(train_loader), 'val loader ', len(val_loader))
 
     # Prepare models 
-    model_context, model_body = prep_models(context_model=args.context_model, body_model=args.body_model, model_dir=model_path)
-    emotic_model = Emotic(list(model_context.children())[-1].in_features, list(model_body.children())[-1].in_features)
-    model_context = nn.Sequential(*(list(model_context.children())[:-1]))
-    model_body = nn.Sequential(*(list(model_body.children())[:-1]))
+    model_context, model_body = prep_models()
+    emotic_model = Emotic(list(model_context.resnet.children())[-1].in_features, list(model_body.resnet.children())[-1].in_features)
+    model_context = nn.Sequential(*(list(model_context.resnet.children())[:-1]))
+    model_body = nn.Sequential(*(list(model_body.resnet.children())[:-1]))
 
     for param in emotic_model.parameters():
         param.requires_grad = True
@@ -222,18 +209,36 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
         param.requires_grad = True
     
     device = torch.device("cuda:%s" %(str(args.gpu)) if torch.cuda.is_available() else "cpu")
-    opt = optim.Adam((list(emotic_model.parameters()) + list(model_context.parameters()) + list(model_body.parameters())), lr=args.learning_rate, weight_decay=args.weight_decay)
-    scheduler = StepLR(opt, step_size=7, gamma=0.1)
-    disc_loss = DiscreteLoss(args.discrete_loss_weight_type, device)
-    if args.continuous_loss_type == 'Smooth L1':
-        cont_loss = ContinuousLoss_SL1()
-    else:
-        cont_loss = ContinuousLoss_L2()
+
+    # 收集需要训练的参数
+    param_groups = [
+        {
+            'params': emotic_model.fusion.parameters(),
+            'lr': 0.001
+        },
+        {
+            'params': model_context.parameters(),
+            'lr': 0.001  # 因为是从头训练，所以使用较大的学习率
+        },
+        {
+            'params': model_body.parameters(),
+            'lr': 0.001  # 因为是从头训练，所以使用较大的学习率
+        },
+        {
+            'params': list(emotic_model.resnet_full_transform.parameters()) + 
+                     list(emotic_model.resnet_bbox_transform.parameters()),
+            'lr': 0.001
+        }
+    ]
+    opt = optim.AdamW(param_groups, weight_decay=0.01)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        opt, mode='min', factor=0.5, patience=5  # 移除verbose参数
+    )
 
     train_writer = SummaryWriter(train_log_path)
     val_writer = SummaryWriter(val_log_path)
 
     # training
-    train_data(opt, scheduler, [model_context, model_body, emotic_model], device, train_loader, val_loader, disc_loss, cont_loss, train_writer, val_writer, model_path, args, ind2cat, ind2vad)
+    train_data(opt, scheduler, [model_context, model_body, emotic_model], device, train_loader, val_loader, train_writer, val_writer, model_path, args, ind2cat, ind2vad)
     # validation
     test_data([model_context, model_body, emotic_model], device, val_loader, ind2cat, ind2vad, len(val_dataset), result_dir=result_path, test_type='val')
