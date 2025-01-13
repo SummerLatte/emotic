@@ -144,7 +144,12 @@ def test_emotic(result_path, model_path, ind2cat, ind2vad, context_norm, body_no
     print ('test ', 'context ', test_context.shape, 'body', test_body.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)
 
     # Initialize Dataset and DataLoader 
-    test_transform = transforms.Compose([transforms.ToPILImage(),transforms.ToTensor()])
+    test_transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                           std=[0.229, 0.224, 0.225])])
     test_dataset = Emotic_PreDataset(test_context, test_body, test_cat, test_cont, test_transform, context_norm, body_norm)
     test_loader = DataLoader(test_dataset, args.batch_size, shuffle=False)
     print ('test loader ', len(test_loader))

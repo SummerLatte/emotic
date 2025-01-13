@@ -170,8 +170,19 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     val_cat = np.load(os.path.join(args.data_path, 'val_cat_arr.npy'))
     val_cont = np.load(os.path.join(args.data_path, 'val_cont_arr.npy'))
 
-    print ('train ', 'context ', train_context.shape, 'body', train_body.shape, 'cat ', train_cat.shape, 'cont', train_cont.shape)
-    print ('val ', 'context ', val_context.shape, 'body', val_body.shape, 'cat ', val_cat.shape, 'cont', val_cont.shape)
+    test_context = np.load(os.path.join(args.data_path, 'test_context_arr.npy'))
+    test_body = np.load(os.path.join(args.data_path, 'test_body_arr.npy'))
+    test_cat = np.load(os.path.join(args.data_path, 'test_cat_arr.npy'))
+    test_cont = np.load(os.path.join(args.data_path, 'test_cont_arr.npy'))
+
+    # 合并训练集和验证集
+    train_context = np.concatenate((train_context, val_context), axis=0)
+    train_body = np.concatenate((train_body, val_body), axis=0)
+    train_cat = np.concatenate((train_cat, val_cat), axis=0)
+    train_cont = np.concatenate((train_cont, val_cont), axis=0)
+
+    print ('Combined train+val ', 'context ', train_context.shape, 'body', train_body.shape, 'cat ', train_cat.shape, 'cont', train_cont.shape)
+    print ('test (new val) ', 'context ', test_context.shape, 'body', test_body.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)
 
     # Initialize Dataset and DataLoader 
     train_transform = transforms.Compose([transforms.ToPILImage(),
@@ -186,7 +197,7 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
                                std=[0.229, 0.224, 0.225])])
 
     train_dataset = Emotic_PreDataset(train_context, train_body, train_cat, train_cont, train_transform, context_norm, body_norm)
-    val_dataset = Emotic_PreDataset(val_context, val_body, val_cat, val_cont, test_transform, context_norm, body_norm)
+    val_dataset = Emotic_PreDataset(test_context, test_body, test_cat, test_cont, test_transform, context_norm, body_norm)
 
     train_loader = DataLoader(train_dataset, args.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, args.batch_size, shuffle=False)
@@ -230,7 +241,7 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     ]
     opt = optim.AdamW(param_groups, weight_decay=0.01)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        opt, mode='min', factor=0.5, patience=5  # 移除verbose参数
+        opt, mode='min', factor=0.5, patience=5
     )
 
     train_writer = SummaryWriter(train_log_path)
