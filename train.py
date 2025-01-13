@@ -7,6 +7,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader 
 from torchvision import transforms
 from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
 from emotic import Emotic 
 from emotic_dataset import Emotic_PreDataset
@@ -19,7 +20,7 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
     Training emotic model on train data using train loader.
     :param opt: Optimizer object.
     :param scheduler: Learning rate scheduler object.
-    :param models: List containing model_context, model_body and emotic_model (fusion model) in that order. 
+    :param models: Emotic model. 
     :param device: Torch device. Used to send tensors to GPU if available. 
     :param train_loader: Dataloader iterating over train dataset. 
     :param val_loader: Dataloader iterating over validation dataset. 
@@ -33,11 +34,9 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
 
     criterion = nn.BCELoss()
     
-    model_context, model_body, emotic_model = models
+    emotic_model = models
 
     emotic_model.to(device)
-    model_context.to(device)
-    model_body.to(device)
 
     print ('starting training')
 
@@ -51,11 +50,10 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
         train_cat_labels = []
         
         emotic_model.train()
-        model_context.train()
-        model_body.train()
         
         #train models for one epoch 
-        for images_context, images_body, labels_cat, labels_cont in iter(train_loader):
+        train_iterator = tqdm(train_loader, desc=f'Epoch {e+1}/{args.epochs} [Train]', leave=False)
+        for images_context, images_body, labels_cat, labels_cont in train_iterator:
             images_context = images_context.to(device)
             images_body = images_body.to(device)
             labels_cat = labels_cat.to(device)
@@ -63,10 +61,7 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
 
             opt.zero_grad()
 
-            pred_context = model_context(images_context)
-            pred_body = model_body(images_body)
-
-            pred_cat = emotic_model(pred_context, pred_body)
+            pred_cat = emotic_model(images_context, images_body)
             loss = criterion(pred_cat, labels_cat)
             
             running_loss += loss.item()
@@ -96,21 +91,17 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
         val_cat_labels = []
         
         emotic_model.eval()
-        model_context.eval()
-        model_body.eval()
         
         with torch.no_grad():
             #validation for one epoch
-            for images_context, images_body, labels_cat, labels_cont in iter(val_loader):
+            val_iterator = tqdm(val_loader, desc=f'Epoch {e+1}/{args.epochs} [Val]', leave=False)
+            for images_context, images_body, labels_cat, labels_cont in val_iterator:
                 images_context = images_context.to(device)
                 images_body = images_body.to(device)
                 labels_cat = labels_cat.to(device)
                 labels_cont = labels_cont.to(device)
 
-                pred_context = model_context(images_context)
-                pred_body = model_body(images_body)
-
-                pred_cat = emotic_model(pred_context, pred_body)
+                pred_cat = emotic_model(images_context, images_body)
                 loss = criterion(pred_cat, labels_cat)
                 
                 running_loss += loss.item()
@@ -139,11 +130,7 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
     
     print ('completed training')
     emotic_model.to("cpu")
-    model_context.to("cpu")
-    model_body.to("cpu")
     torch.save(emotic_model, os.path.join(model_path, 'model_emotic1.pth'))
-    torch.save(model_context, os.path.join(model_path, 'model_context1.pth'))
-    torch.save(model_body, os.path.join(model_path, 'model_body1.pth'))
     print ('saved models')
 
 
@@ -175,14 +162,9 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     test_cat = np.load(os.path.join(args.data_path, 'test_cat_arr.npy'))
     test_cont = np.load(os.path.join(args.data_path, 'test_cont_arr.npy'))
 
-    # 合并训练集和验证集
-    train_context = np.concatenate((train_context, val_context), axis=0)
-    train_body = np.concatenate((train_body, val_body), axis=0)
-    train_cat = np.concatenate((train_cat, val_cat), axis=0)
-    train_cont = np.concatenate((train_cont, val_cont), axis=0)
-
-    print ('Combined train+val ', 'context ', train_context.shape, 'body', train_body.shape, 'cat ', train_cat.shape, 'cont', train_cont.shape)
-    print ('test (new val) ', 'context ', test_context.shape, 'body', test_body.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)
+    print ('train ', 'context ', train_context.shape, 'body', train_body.shape, 'cat ', train_cat.shape, 'cont', train_cont.shape)
+    print ('val ', 'context ', val_context.shape, 'body', val_body.shape, 'cat ', val_cat.shape, 'cont', val_cont.shape)
+    print ('test ', 'context ', test_context.shape, 'body', test_body.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)
 
     # Initialize Dataset and DataLoader 
     train_transform = transforms.Compose([transforms.ToPILImage(),
@@ -197,25 +179,15 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
                                std=[0.229, 0.224, 0.225])])
 
     train_dataset = Emotic_PreDataset(train_context, train_body, train_cat, train_cont, train_transform, context_norm, body_norm)
-    val_dataset = Emotic_PreDataset(test_context, test_body, test_cat, test_cont, test_transform, context_norm, body_norm)
+    val_dataset = Emotic_PreDataset(val_context, val_body, val_cat, val_cont, test_transform, context_norm, body_norm)
 
     train_loader = DataLoader(train_dataset, args.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, args.batch_size, shuffle=False)
 
     print ('train loader ', len(train_loader), 'val loader ', len(val_loader))
 
-    # Prepare models 
-    model_context, model_body = prep_models()
-    emotic_model = Emotic(list(model_context.resnet.children())[-1].in_features, list(model_body.resnet.children())[-1].in_features)
-    model_context = nn.Sequential(*(list(model_context.resnet.children())[:-1]))
-    model_body = nn.Sequential(*(list(model_body.resnet.children())[:-1]))
-
-    for param in emotic_model.parameters():
-        param.requires_grad = True
-    for param in model_context.parameters():
-        param.requires_grad = True
-    for param in model_body.parameters():
-        param.requires_grad = True
+    # 创建Emotic模型
+    emotic_model = Emotic(512, 512)  # ResNet18的特征维度是512
     
     device = torch.device("cuda:%s" %(str(args.gpu)) if torch.cuda.is_available() else "cpu")
 
@@ -226,15 +198,11 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
             'lr': 0.001
         },
         {
-            'params': model_context.parameters(),
-            'lr': 0.001  # 因为是从头训练，所以使用较大的学习率
+            'params': emotic_model.resnet_body.parameters(),
+            'lr': 0.00001
         },
         {
-            'params': model_body.parameters(),
-            'lr': 0.001  # 因为是从头训练，所以使用较大的学习率
-        },
-        {
-            'params': list(emotic_model.resnet_full_transform.parameters()) + 
+            'params': list(emotic_model.blip_transform.parameters()) + 
                      list(emotic_model.resnet_bbox_transform.parameters()),
             'lr': 0.001
         }
@@ -248,6 +216,6 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     val_writer = SummaryWriter(val_log_path)
 
     # training
-    train_data(opt, scheduler, [model_context, model_body, emotic_model], device, train_loader, val_loader, train_writer, val_writer, model_path, args, ind2cat, ind2vad)
+    train_data(opt, scheduler, emotic_model, device, train_loader, val_loader, train_writer, val_writer, model_path, args, ind2cat, ind2vad)
     # validation
-    test_data([model_context, model_body, emotic_model], device, val_loader, ind2cat, ind2vad, len(val_dataset), result_dir=result_path, test_type='val', writer=val_writer, epoch=args.epochs)
+    test_data(emotic_model, device, val_loader, ind2cat, ind2vad, len(val_dataset), result_dir=result_path, test_type='val', writer=val_writer, epoch=args.epochs)

@@ -1,5 +1,6 @@
 跑通了  重要标杆
 什么都不做 15epochs mAP：20/30
+预训练 15epochs mAP：22.878/30
 合并train和val 15epochs: 22.783
 
 # Emotic 

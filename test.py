@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader 
 import torchvision.models as models
 from torchvision import transforms
+from tqdm import tqdm
 
 from emotic import Emotic 
 from emotic_dataset import Emotic_PreDataset
@@ -67,57 +68,51 @@ def get_thresholds(cat_preds, cat_labels):
   return thresholds
 
 
-def test_data(models, device, data_loader, ind2cat, ind2vad, num_images, result_dir='./', test_type='val', writer=None, epoch=None):
-    ''' Test models on data 
-    :param models: List containing model_context, model_body and emotic_model (fusion model) in that order.
-    :param device: Torch device. Used to send tensors to GPU if available. 
-    :param data_loader: Dataloader iterating over dataset. 
-    :param ind2cat: Dictionary converting integer index to categorical emotion.
-    :param ind2vad: Dictionary converting integer index to continuous emotion dimension (Valence, Arousal and Dominance)
-    :param num_images: Number of images in the dataset. 
-    :param result_dir: Directory path to save results (predictions mat object and thresholds npy object).
-    :param test_type: Test type variable. Variable used in the name of thresholds and predictio files.
-    :param writer: TensorBoard writer object.
-    :param epoch: Current epoch number.
+def test_data(models, device, test_loader, ind2cat, ind2vad, num_images, result_dir=None, test_type=None, writer=None, epoch=None):
     '''
-    model_context, model_body, emotic_model = models
-    cat_preds = np.zeros((num_images, 26))
-    cat_labels = np.zeros((num_images, 26))
-
+    Function to test models on test data.
+    :param models: Emotic model.
+    :param device: Torch device. Used to send tensors to GPU if available.
+    :param test_loader: Dataloader iterating over test dataset. 
+    :param ind2cat: Dictionary converting integer index to categorical emotion. 
+    :param ind2vad: Dictionary converting integer index to continuous emotion dimension (Valence, Arousal and Dominance).
+    :param num_images: Number of images being tested.
+    :param result_dir: Directory path to save the results (model predictions).
+    :param test_type: Test type variable. Variable used in directory path to save results.
+    :param writer: SummaryWriter object to save the logs in tensorboard (or None).
+    :param epoch: Current epoch number (or None).
+    '''
     with torch.no_grad():
-        model_context.to(device)
-        model_body.to(device)
+        emotic_model = models
         emotic_model.to(device)
-        model_context.eval()
-        model_body.eval()
         emotic_model.eval()
-        indx = 0
-        print ('starting testing')
-        for images_context, images_body, labels_cat, labels_cont in iter(data_loader):
+        
+        cat_preds = []
+        cat_labels = []
+        
+        test_iterator = tqdm(test_loader, desc='Testing', leave=False)
+        for images_context, images_body, labels_cat, labels_cont in test_iterator:
             images_context = images_context.to(device)
             images_body = images_body.to(device)
+            labels_cat = labels_cat.to(device)
+            labels_cont = labels_cont.to(device)
 
-            pred_context = model_context(images_context)
-            pred_body = model_body(images_body)
-            pred_cat = emotic_model(pred_context, pred_body)
-
-            cat_preds[ indx : (indx + pred_cat.shape[0]), :] = pred_cat.to("cpu").data.numpy()
-            cat_labels[ indx : (indx + labels_cat.shape[0]), :] = labels_cat.to("cpu").data.numpy()
-            indx = indx + pred_cat.shape[0]
-
-    cat_preds = cat_preds.transpose()
-    cat_labels = cat_labels.transpose()
-    print ('completed testing')
-    
-    # Mat files used for emotic testing (matlab script)
-    scipy.io.savemat(os.path.join(result_dir, '%s_cat_preds.mat' %(test_type)), mdict={'cat_preds':cat_preds})
-    scipy.io.savemat(os.path.join(result_dir, '%s_cat_labels.mat' %(test_type)), mdict={'cat_labels':cat_labels})
-    print ('saved mat files')
-
-    test_scikit_ap(cat_preds, cat_labels, ind2cat, writer, epoch)
-    thresholds = get_thresholds(cat_preds, cat_labels)
-    np.save(os.path.join(result_dir, '%s_thresholds.npy' %(test_type)), thresholds)
-    print ('saved thresholds')
+            pred_cat = emotic_model(images_context, images_body)
+            
+            cat_preds.append(pred_cat.cpu().numpy())
+            cat_labels.append(labels_cat.cpu().numpy())
+        
+        cat_preds = np.concatenate(cat_preds, axis=0).transpose()
+        cat_labels = np.concatenate(cat_labels, axis=0).transpose()
+        
+        # 计算并打印测试指标
+        test_scikit_ap(cat_preds, cat_labels, ind2cat, writer, epoch)
+        
+        # 保存预测结果
+        if result_dir and test_type:
+            np.save(os.path.join(result_dir, '{}_cat_preds.npy'.format(test_type)), cat_preds)
+            np.save(os.path.join(result_dir, '{}_cat_labels.npy'.format(test_type)), cat_labels)
+            print ('Saved results in directory ', result_dir)
 
 
 def test_emotic(result_path, model_path, ind2cat, ind2vad, context_norm, body_norm, args):

@@ -8,7 +8,7 @@ import torch.nn as nn
 class Resnet18(nn.Module):
     def __init__(self):
         super(Resnet18, self).__init__()
-        self.resnet = models.resnet18(weights=None)
+        self.resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
     def forward(self, x):
         return self.resnet(x)
