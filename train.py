@@ -15,10 +15,10 @@ from emotic import Emotic
 from emotic_dataset import Emotic_PreDataset
 from loss import DiscreteLoss, ContinuousLoss_SL1, ContinuousLoss_L2
 from prepare_models import prep_models
-from test import test_data
+from test import test_data, test_scikit_ap, test_vad
 
 
-def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_loss, cont_loss, train_writer, val_writer, model_path, args):
+def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_loss, cont_loss, train_writer, val_writer, model_path, args, ind2cat, ind2vad):
     '''
     Training emotic model on train data using train loader.
     :param opt: Optimizer object.
@@ -33,6 +33,8 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
     :param val_writer: SummaryWriter object to save validation logs. 
     :param model_path: Directory path to save the models after training. 
     :param args: Runtime arguments.
+    :param ind2cat: Dictionary converting integer index to categorical emotion.
+    :param ind2vad: Dictionary converting integer index to continuous emotion dimension.
     '''
     
     model_context, model_body, emotic_model = models
@@ -44,10 +46,13 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
     print ('starting training')
 
     for e in range(args.epochs):
-
         running_loss = 0.0 
         running_cat_loss = 0.0 
         running_cont_loss = 0.0
+        
+        # 用于存储训练阶段的预测和标签
+        train_cat_preds = []
+        train_cat_labels = []
         
         emotic_model.train()
         model_context.train()
@@ -75,11 +80,22 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
             running_cat_loss += cat_loss_batch.item()
             running_cont_loss += cont_loss_batch.item()
             
+            # 收集训练阶段的预测和标签
+            train_cat_preds.append(pred_cat.detach().cpu().numpy())
+            train_cat_labels.append(labels_cat.detach().cpu().numpy())
+            
             loss.backward()
             opt.step()
 
+        # 计算训练阶段的mAP
+        train_cat_preds = np.concatenate(train_cat_preds, axis=0).transpose()
+        train_cat_labels = np.concatenate(train_cat_labels, axis=0).transpose()
+        
         if e % 1 == 0: 
             print ('epoch = %d loss = %.4f cat loss = %.4f cont_loss = %.4f' %(e, running_loss, running_cat_loss, running_cont_loss))
+            print('Training metrics:')
+            train_ap = test_scikit_ap(train_cat_preds, train_cat_labels, ind2cat)
+            train_writer.add_scalar('metrics/mAP', train_ap.mean(), e)
 
         train_writer.add_scalar('losses/total_loss', running_loss, e)
         train_writer.add_scalar('losses/categorical_loss', running_cat_loss, e)
@@ -88,6 +104,12 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
         running_loss = 0.0 
         running_cat_loss = 0.0 
         running_cont_loss = 0.0 
+        
+        # 用于存储验证阶段的预测和标签
+        val_cat_preds = []
+        val_cat_labels = []
+        val_cont_preds = []
+        val_cont_labels = []
         
         emotic_model.eval()
         model_context.eval()
@@ -112,9 +134,25 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, disc_lo
                 running_loss += loss.item()
                 running_cat_loss += cat_loss_batch.item()
                 running_cont_loss += cont_loss_batch.item()
+                
+                # 收集验证阶段的预测和标签
+                val_cat_preds.append(pred_cat.cpu().numpy())
+                val_cat_labels.append(labels_cat.cpu().numpy())
+                val_cont_preds.append(pred_cont.cpu().numpy())
+                val_cont_labels.append(labels_cont.cpu().numpy())
+
+        # 计算验证阶段的mAP和VAD
+        val_cat_preds = np.concatenate(val_cat_preds, axis=0).transpose()
+        val_cat_labels = np.concatenate(val_cat_labels, axis=0).transpose()
+        val_cont_preds = np.concatenate(val_cont_preds, axis=0).transpose()
+        val_cont_labels = np.concatenate(val_cont_labels, axis=0).transpose()
 
         if e % 1 == 0:
             print ('epoch = %d validation loss = %.4f cat loss = %.4f cont loss = %.4f ' %(e, running_loss, running_cat_loss, running_cont_loss))
+            print('Validation metrics:')
+            val_ap = test_scikit_ap(val_cat_preds, val_cat_labels, ind2cat)
+            test_vad(val_cont_preds, val_cont_labels, ind2vad)
+            val_writer.add_scalar('metrics/mAP', val_ap.mean(), e)
         
         val_writer.add_scalar('losses/total_loss', running_loss, e)
         val_writer.add_scalar('losses/categorical_loss', running_cat_loss, e)
@@ -196,6 +234,6 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     val_writer = SummaryWriter(val_log_path)
 
     # training
-    train_data(opt, scheduler, [model_context, model_body, emotic_model], device, train_loader, val_loader, disc_loss, cont_loss, train_writer, val_writer, model_path, args)
+    train_data(opt, scheduler, [model_context, model_body, emotic_model], device, train_loader, val_loader, disc_loss, cont_loss, train_writer, val_writer, model_path, args, ind2cat, ind2vad)
     # validation
     test_data([model_context, model_body, emotic_model], device, val_loader, ind2cat, ind2vad, len(val_dataset), result_dir=result_path, test_type='val')

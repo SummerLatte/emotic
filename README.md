@@ -1,3 +1,5 @@
+跑通了  重要标杆
+
 # Emotic 
 
 Humans use their facial features or expressions to convey how they feel, such as a person may smile when happy and scowl when angry. Historically, computer vision research has focussed on analyzing and learning these facial features to recognize emotions. 
