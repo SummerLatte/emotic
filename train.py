@@ -33,6 +33,7 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
     '''
 
     criterion = nn.BCELoss()
+    best_val_ap = 0.0  # 跟踪最佳验证mAP
     
     emotic_model = models
 
@@ -119,6 +120,14 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
             print('Validation metrics:')
             val_ap = test_scikit_ap(val_cat_preds, val_cat_labels, ind2cat, val_writer, e)
             
+            # 如果当前验证mAP更好，则保存模型
+            if val_ap > best_val_ap:
+                best_val_ap = val_ap
+                print(f'New best validation mAP: {best_val_ap:.4f}, saving model...')
+                emotic_model.to("cpu")
+                torch.save(emotic_model, os.path.join(model_path, 'model_emotic1_best.pth'))
+                emotic_model.to(device)
+            
             # 记录当前学习率
             current_lr = opt.param_groups[0]['lr']
             print(f'Current learning rate: {current_lr}')
@@ -129,8 +138,7 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
         scheduler.step(running_loss)  # 使用验证loss来调整学习率
     
     print ('completed training')
-    emotic_model.to("cpu")
-    torch.save(emotic_model, os.path.join(model_path, 'model_emotic1.pth'))
+    print(f'Best validation mAP: {best_val_ap:.4f}')
     print ('saved models')
 
 
