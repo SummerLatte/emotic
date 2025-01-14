@@ -126,9 +126,9 @@ def test_emotic(result_path, model_path, ind2cat, ind2vad, context_norm, body_no
     :param args: Runtime arguments.
     '''    
     # Prepare models 
-    model_context = torch.load(os.path.join(model_path,'model_context1.pth'))
-    model_body = torch.load(os.path.join(model_path,'model_body1.pth'))
-    emotic_model = torch.load(os.path.join(model_path,'model_emotic1.pth'))
+    # model_context = torch.load(os.path.join(model_path,'model_context1.pth'))
+    # model_body = torch.load(os.path.join(model_path,'model_body1.pth'))
+    emotic_model = torch.load(os.path.join(model_path,'model_emotic1_best.pth'))
     print ('Succesfully loaded models')
 
     #Load data preprocessed npy files
@@ -150,4 +150,4 @@ def test_emotic(result_path, model_path, ind2cat, ind2vad, context_norm, body_no
     print ('test loader ', len(test_loader))
     
     device = torch.device("cuda:%s" %(str(args.gpu)) if torch.cuda.is_available() else "cpu")
-    test_data([model_context, model_body, emotic_model], device, test_loader, ind2cat, ind2vad, len(test_dataset), result_dir=result_path, test_type='test', writer=None, epoch=None)
+    test_data(emotic_model, device, test_loader, ind2cat, ind2vad, len(test_dataset), result_dir=result_path, test_type='test', writer=None, epoch=None)
