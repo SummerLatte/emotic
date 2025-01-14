@@ -29,7 +29,7 @@ class Emotic(nn.Module):
         param.requires_grad = False
         
     # 初始化ResNet模型用于处理body特征
-    self.resnet_body = models.resnet50(weights=models.resnet50_Weights.IMAGENET1K_V1)
+    self.resnet_body = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
     self.resnet_body = nn.Sequential(*(list(self.resnet_body.children())[:-1]))  # 移除最后的全连接层
     
     # 定义特征转换层
