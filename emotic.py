@@ -34,7 +34,7 @@ class Emotic(nn.Module):
     
     # 定义特征转换层
     self.blip_transform = nn.Linear(self.blip_hidden_size, 256)
-    self.resnet_bbox_transform = nn.Linear(512, 256)
+    self.resnet_bbox_transform = nn.Linear(2048, 256)
     
     # 定义融合层和分类器 (BLIP特征 + body特征)
     self.fusion = nn.Sequential(
