@@ -7,7 +7,7 @@ import torchvision.models as models
 
 class Emotic(nn.Module):
   ''' Emotic Model with BLIP'''
-  def __init__(self, num_context_features, num_body_features, model_size='small'):
+  def __init__(self, num_context_features, num_body_features, model_size='large'):
     super(Emotic,self).__init__()
     self.num_context_features = num_context_features
     self.num_body_features = num_body_features
@@ -29,12 +29,12 @@ class Emotic(nn.Module):
         param.requires_grad = False
         
     # 初始化ResNet模型用于处理body特征
-    self.resnet_body = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+    self.resnet_body = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
     self.resnet_body = nn.Sequential(*(list(self.resnet_body.children())[:-1]))  # 移除最后的全连接层
     
     # 定义特征转换层
     self.blip_transform = nn.Linear(self.blip_hidden_size, 256)
-    self.resnet_bbox_transform = nn.Linear(2048, 256)
+    self.resnet_bbox_transform = nn.Linear(512, 256)
     
     # 定义融合层和分类器 (BLIP特征 + body特征)
     self.fusion = nn.Sequential(

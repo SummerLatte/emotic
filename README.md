@@ -2,6 +2,8 @@
 什么都不做 15epochs mAP：20/30
 预训练res-18 15epochs mAP：22.878/30
 预训练res-18+blipbase 50epochs mAP：28.243/30
+预训练res-18+bliplarge 50epochs mAP：30.258/30
+预训练res-50+blipbase 50epochs mAP：27.336/30
 合并train和val 15epochs: 22.783
 
 # Emotic 
