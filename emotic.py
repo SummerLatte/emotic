@@ -6,7 +6,7 @@ from PIL import Image
 import torchvision.models as models
 
 class Emotic(nn.Module):
-  ''' Emotic Model with BLIP'''
+  ''' Emotic Model with BLIP and ResNet18'''
   def __init__(self, num_context_features, num_body_features, model_size='large'):
     super(Emotic,self).__init__()
     self.num_context_features = num_context_features
@@ -28,17 +28,22 @@ class Emotic(nn.Module):
     for param in self.blip.parameters():
         param.requires_grad = False
         
+    # 初始化ResNet模型用于处理context特征
+    self.resnet_context = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+    self.resnet_context = nn.Sequential(*(list(self.resnet_context.children())[:-1]))
+        
     # 初始化ResNet模型用于处理body特征
     self.resnet_body = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
     self.resnet_body = nn.Sequential(*(list(self.resnet_body.children())[:-1]))  # 移除最后的全连接层
     
     # 定义特征转换层
     self.blip_transform = nn.Linear(self.blip_hidden_size, 256)
+    self.resnet_context_transform = nn.Linear(512, 256)
     self.resnet_bbox_transform = nn.Linear(512, 256)
     
-    # 定义融合层和分类器 (BLIP特征 + body特征)
+    # 定义融合层和分类器 (BLIP特征 + context ResNet特征 + body特征)
     self.fusion = nn.Sequential(
-      nn.Linear(512, 512),  # 两个256维特征的拼接
+      nn.Linear(768, 512),  # 三个256维特征的拼接
       nn.ReLU(),
       nn.Dropout(0.3),
       nn.Linear(512, 256),
@@ -73,16 +78,21 @@ class Emotic(nn.Module):
         vision_outputs = self.blip.vision_model(pixel_values)
         blip_features = vision_outputs.pooler_output
 
+    # 使用ResNet处理context特征
+    context_features = self.resnet_context(x_context)
+    context_features = context_features.view(context_features.size(0), -1)
+
     # 使用ResNet处理body特征
     body_features = self.resnet_body(x_body)
     body_features = body_features.view(body_features.size(0), -1)
 
     # 转换特征维度
     blip_features = self.blip_transform(blip_features)
+    resnet_context_features = self.resnet_context_transform(context_features)
     resnet_bbox_features = self.resnet_bbox_transform(body_features)
     
     # 特征融合
-    combined_features = torch.cat([blip_features, resnet_bbox_features], dim=1)
+    combined_features = torch.cat([blip_features, resnet_context_features, resnet_bbox_features], dim=1)
     
     # 通过融合层和分类器
     output = self.fusion(combined_features)
