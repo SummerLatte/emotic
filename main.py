@@ -10,7 +10,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=int, default=0, help='gpu id')
     parser.add_argument('--mode', type=str, default='train_test', choices=['train', 'test', 'train_test', 'inference'])
-    parser.add_argument('--data_path', type=str, default='D:\developer\code\emoticFirst\Emotic\emotic_pre', help='Path to preprocessed data npy files/ csv files')
+    parser.add_argument('--data_path', type=str, default='emotic_pre', help='Path to preprocessed data npy files/ csv files')
     parser.add_argument('--experiment_path', type=str, default='experiment', help='Path to save experiment files (results, models, logs)')
     parser.add_argument('--model_dir_name', type=str, default='models', help='Name of the directory to save models')
     parser.add_argument('--result_dir_name', type=str, default='results', help='Name of the directory to save results(predictions, labels mat files)')

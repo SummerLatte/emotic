@@ -163,6 +163,7 @@ def prepare_data(data_mat, data_path_src, save_dir, dataset_type='train', genera
   if generate_npy:
     context_arr = list()
     body_arr = list()
+    body_original_sizes = list()  # 存储原始尺寸
     cat_arr = list()
     cont_arr = list()
   
@@ -200,6 +201,7 @@ def prepare_data(data_mat, data_path_src, save_dir, dataset_type='train', genera
       if generate_npy == True:
         context_arr.append(context_cv)
         body_arr.append(body_cv)
+        body_original_sizes.append((body.shape[0], body.shape[1]))  # 保存原始尺寸
         if dataset_type == 'train':
           cat_arr.append(cat_to_one_hot(et.cat))
           cont_arr.append(np.array(et.cont))
@@ -236,14 +238,30 @@ def prepare_data(data_mat, data_path_src, save_dir, dataset_type='train', genera
   if generate_npy == True: 
     context_arr = np.array(context_arr)
     body_arr = np.array(body_arr)
+    body_original_sizes = np.array(body_original_sizes)  # 转换尺寸数组
     cat_arr = np.array(cat_arr)
     cont_arr = np.array(cont_arr)
-    print (len(data_set), context_arr.shape, body_arr.shape)
+    print("Array shapes:")
+    print(f"context_arr: {context_arr.shape}")
+    print(f"body_arr: {body_arr.shape}")
+    print(f"body_original_sizes: {body_original_sizes.shape}")
+    print(f"cat_arr: {cat_arr.shape}")
+    print(f"cont_arr: {cont_arr.shape}")
+    
+    print("\nSaving arrays...")
     np.save(os.path.join(save_dir,'%s_context_arr.npy' %(dataset_type)), context_arr)
+    print("Saved context_arr")
     np.save(os.path.join(save_dir,'%s_body_arr.npy' %(dataset_type)), body_arr)
+    print("Saved body_arr")
+    np.save(os.path.join(save_dir,'%s_body_original_sizes.npy' %(dataset_type)), body_original_sizes)
+    print("Saved body_original_sizes")
     np.save(os.path.join(save_dir,'%s_cat_arr.npy' %(dataset_type)), cat_arr)
+    print("Saved cat_arr")
     np.save(os.path.join(save_dir,'%s_cont_arr.npy' %(dataset_type)), cont_arr)
-    print (context_arr.shape, body_arr.shape, cat_arr.shape, cont_arr.shape)
+    print("Saved cont_arr")
+    
+    print("\nSample of body_original_sizes:")
+    print(body_original_sizes[:5])  # 打印前5个尺寸
   print ('completed generating %s data files' %(dataset_type))
  
 
@@ -251,12 +269,10 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', default='D:\developer\code\emoticFirst\Emotic', type=str, help='Path to Emotic data and annotations')
     parser.add_argument('--save_dir_name', type=str, default='emotic_pre', help='Directory name in which preprocessed data will be stored')
-    parser.add_argument('--label', type=str,  default='all', choices=['train', 'val', 'test', 'all'])
-    parser.add_argument('--generate_npy', action='store_true',default=True, help='Generate npy files')
-    parser.add_argument('--debug_mode', action='store_true', help='Debug mode. Will only save a small subset of the data')
-    # Generate args
-    args = parser.parse_args()
-    return args
+    parser.add_argument('--label', type=str, default='all', choices=['train', 'val', 'test', 'all'])
+    parser.add_argument('--generate_npy', action='store_true', default=True, help='Generate npy files')
+    parser.add_argument('--debug_mode', action='store_true', default=False, help='Debug mode. Will only save a small subset of the data')
+    return parser.parse_args()
   
 if __name__ == '__main__':
     args = parse_args()
@@ -275,7 +291,7 @@ if __name__ == '__main__':
         cat2ind[emotion] = idx
         ind2cat[idx] = emotion
     
-    print ('loading Annotations')
+    print('loading Annotations')
     mat = loadmat(ann_path_src)
     if args.label.lower() == 'all':
       labels = ['train', 'val', 'test']
@@ -283,5 +299,5 @@ if __name__ == '__main__':
       labels = [args.label.lower()]
     for label in labels:
       data_mat = mat[label]
-      print ('starting label ', label)
-      prepare_data(data_mat, data_path_src, save_path, dataset_type=label, generate_npy=True, debug_mode=args.debug_mode)
+      print('starting label', label)
+      prepare_data(data_mat, data_path_src, save_path, dataset_type=label, generate_npy=args.generate_npy, debug_mode=args.debug_mode)
