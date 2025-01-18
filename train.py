@@ -203,9 +203,16 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     test_dataset = Emotic_PreDataset(test_context, test_body, test_face, test_has_face, test_cat, test_cont, \
                                     test_transform, context_norm, body_norm)
 
-    train_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, args.batch_size, shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_dataset, args.batch_size, shuffle=False, num_workers=4)
+    # 修改DataLoader配置
+    train_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, 
+                            num_workers=0,  # 暂时禁用多进程
+                            pin_memory=True)  # 启用pin_memory以加快数据传输
+    val_loader = DataLoader(val_dataset, args.batch_size, shuffle=False, 
+                          num_workers=0,
+                          pin_memory=True)
+    test_loader = DataLoader(test_dataset, args.batch_size, shuffle=False, 
+                           num_workers=0,
+                           pin_memory=True)
 
     print ('train loader ', len(train_loader), 'val loader ', len(val_loader), 'test loader', len(test_loader))
 
