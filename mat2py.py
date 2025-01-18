@@ -203,11 +203,11 @@ def prepare_data(data_mat, data_path_src, save_dir, dataset_type='train', genera
         body_arr.append(body_cv)
         body_original_sizes.append((body.shape[0], body.shape[1]))  # 保存原始尺寸
         if dataset_type == 'train':
-          cat_arr.append(cat_to_one_hot(et.cat))
-          cont_arr.append(np.array(et.cont))
+          cat_arr.append(cat_to_one_hot(et.cat).astype(np.int32))
+          cont_arr.append(np.array(et.cont, dtype=np.float32))
         else: 
-          cat_arr.append(cat_to_one_hot(et.comb_cat))
-          cont_arr.append(np.array(et.comb_cont))
+          cat_arr.append(cat_to_one_hot(et.comb_cat).astype(np.int32))
+          cont_arr.append(np.array(et.comb_cont, dtype=np.float32))
       if idx % 1000 == 0 and debug_mode==False:
         print (" Preprocessing data. Index = ", idx)
       elif idx % 20 == 0 and debug_mode==True:

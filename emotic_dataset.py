@@ -10,10 +10,12 @@ from torchvision import transforms
 
 class Emotic_PreDataset(Dataset):
   ''' Custom Emotic dataset class. Use preprocessed data stored in npy files. '''
-  def __init__(self, x_context, x_body, y_cat, y_cont, transform, context_norm, body_norm):
+  def __init__(self, x_context, x_body, x_face, has_face, y_cat, y_cont, transform, context_norm, body_norm):
     super(Emotic_PreDataset,self).__init__()
     self.x_context = x_context
     self.x_body = x_body
+    self.x_face = x_face
+    self.has_face = has_face
     self.y_cat = y_cat 
     self.y_cont = y_cont
     self.transform = transform 
@@ -26,9 +28,11 @@ class Emotic_PreDataset(Dataset):
   def __getitem__(self, index):
     image_context = self.x_context[index]
     image_body = self.x_body[index]
+    image_face = self.x_face[index]
+    has_face = self.has_face[index]
     cat_label = self.y_cat[index]
     cont_label = self.y_cont[index]
-    return self.context_norm(self.transform(image_context)), self.body_norm(self.transform(image_body)), torch.tensor(cat_label, dtype=torch.float32), torch.tensor(cont_label, dtype=torch.float32)/10.0
+    return self.context_norm(self.transform(image_context)), self.body_norm(self.transform(image_body)), self.body_norm(self.transform(image_face)), torch.tensor(has_face, dtype=torch.float32), torch.tensor(cat_label, dtype=torch.float32), torch.tensor(cont_label, dtype=torch.float32)/10.0
 
 
 class Emotic_CSVDataset(Dataset):

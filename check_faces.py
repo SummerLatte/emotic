@@ -9,7 +9,7 @@ import json
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='D:/developer/code/emoticFirst/Emotic/emotic_pre', help='Directory containing the preprocessed data')
-    parser.add_argument('--max_images', type=int, default=1000, help='Maximum number of images to process')
+    parser.add_argument('--max_images', type=int, default=None, help='Maximum number of images to process')
     parser.add_argument('--dataset', type=str, default='train', choices=['train', 'val', 'test'], help='Which dataset to check')
     parser.add_argument('--save_dir', type=str, default='face_check_results', help='Directory to save results')
     parser.add_argument('--target_size', type=int, default=128, help='Target size for face images')
@@ -169,7 +169,7 @@ def process_face_region(image, box, target_size):
 def main():
     args = parse_args()
     
-    # 创建保存目录
+    # 创建保存目录（仅用于保存结果文件）
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     
@@ -205,7 +205,9 @@ def main():
         use_original = False
     
     # 限制处理图像数量
-    num_images = min(args.max_images, len(body_images))
+    num_images = len(body_images)
+    if args.max_images is not None:
+        num_images = min(args.max_images, num_images)
     body_images = body_images[:num_images]
     if use_original:
         original_sizes = original_sizes[:num_images]
@@ -213,7 +215,6 @@ def main():
     # 准备数组存储所有图像的处理结果
     face_images = []  # 存储所有图像（包括没有人脸的）
     has_face_list = []  # 记录每张图像是否包含人脸
-    face_boxes = []  # 记录人脸框位置（没有人脸的记录为None）
     
     # 统计结果
     results = {
@@ -255,7 +256,6 @@ def main():
             # 记录信息
             face_images.append(face_image)
             has_face_list.append(1)  # 1表示有人脸
-            face_boxes.append(largest_face)
             
             # 记录这张图像的人脸信息
             results['face_detections'].append({
@@ -275,14 +275,6 @@ def main():
             # 记录信息
             face_images.append(face_image)
             has_face_list.append(0)  # 0表示没有人脸
-            face_boxes.append(None)
-            
-            # 保存没有检测到人脸的图像
-            save_dir = os.path.join(args.save_dir, f'no_face_{idx}')
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            cv2.imwrite(os.path.join(save_dir, 'original.jpg'),
-                       cv2.cvtColor(image_original, cv2.COLOR_RGB2BGR))
     
     # 转换为numpy数组并保存
     face_images = np.array(face_images)
@@ -293,8 +285,8 @@ def main():
     print(f"Has face array shape: {has_face_arr.shape}")
     
     # 保存为与mat2py相同的格式
-    np.save(os.path.join(args.save_dir, f'{args.dataset}_face_arr.npy'), face_images)
-    np.save(os.path.join(args.save_dir, f'{args.dataset}_has_face.npy'), has_face_arr)
+    np.save(os.path.join(data_dir, f'{args.dataset}_face_arr.npy'), face_images)
+    np.save(os.path.join(data_dir, f'{args.dataset}_has_face.npy'), has_face_arr)
     
     # 打印统计结果
     print("\nResults:")
@@ -303,19 +295,16 @@ def main():
     print(f"Images with faces: {results['images_with_faces']} ({results['images_with_faces']/results['total_images']*100:.2f}%)")
     print(f"Images without faces: {len(results['no_face_indices'])}")
     
-    # 保存详细结果到JSON文件
-    with open(os.path.join(args.save_dir, 'detection_results.json'), 'w') as f:
-        json.dump(results, f, indent=2)
-    
     # 保存简要结果到文本文件
-    with open(os.path.join(args.save_dir, 'results.txt'), 'w') as f:
-        f.write(f"Dataset: {args.dataset}\n")
+    with open(os.path.join(args.save_dir, 'results.txt'), 'a') as f:
+        f.write(f"\nDataset: {args.dataset}\n")
         f.write(f"Using original size information: {use_original}\n")
         f.write(f"Total images processed: {results['total_images']}\n")
         f.write(f"Images with faces: {results['images_with_faces']}\n")
         f.write(f"Images without faces: {len(results['no_face_indices'])}\n")
         f.write("\nIndices of images without faces:\n")
         f.write(str(results['no_face_indices']))
+        f.write("\n" + "="*50 + "\n")
 
 if __name__ == '__main__':
     main() 

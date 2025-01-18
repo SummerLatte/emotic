@@ -21,13 +21,10 @@ class Emotic(nn.Module):
         self.blip_hidden_size = 768
         
     # 加载BLIP模型和处理器
-    self.blip = BlipForConditionalGeneration.from_pretrained(model_name)
-    self.processor = BlipProcessor.from_pretrained(model_name)
+    self.blip = None  # 延迟初始化
+    self.processor = None  # 延迟初始化
+    self.model_name = model_name
     
-    # 冻结BLIP的参数
-    for param in self.blip.parameters():
-        param.requires_grad = False
-        
     # 初始化ResNet模型用于处理context特征
     self.resnet_context = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
     self.resnet_context = nn.Sequential(*(list(self.resnet_context.children())[:-1]))
@@ -36,14 +33,19 @@ class Emotic(nn.Module):
     self.resnet_body = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
     self.resnet_body = nn.Sequential(*(list(self.resnet_body.children())[:-1]))  # 移除最后的全连接层
     
+    # 初始化ResNet模型用于处理face特征
+    self.resnet_face = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+    self.resnet_face = nn.Sequential(*(list(self.resnet_face.children())[:-1]))
+    
     # 定义特征转换层
     self.blip_transform = nn.Linear(self.blip_hidden_size, 256)
     self.resnet_context_transform = nn.Linear(512, 256)
-    self.resnet_bbox_transform = nn.Linear(512, 256)
+    self.resnet_body_transform = nn.Linear(512, 256)
+    self.resnet_face_transform = nn.Linear(512, 256)
     
-    # 定义融合层和分类器 (BLIP特征 + context ResNet特征 + body特征)
+    # 定义融合层和分类器 (BLIP特征 + context ResNet特征 + body特征 + face特征)
     self.fusion = nn.Sequential(
-      nn.Linear(768, 512),  # 三个256维特征的拼接
+      nn.Linear(1024, 512),  # 四个256维特征的拼接
       nn.ReLU(),
       nn.Dropout(0.3),
       nn.Linear(512, 256),
@@ -53,8 +55,19 @@ class Emotic(nn.Module):
       nn.Sigmoid()
     )
 
+  def init_blip(self, device):
+    """初始化BLIP模型"""
+    if self.blip is None:
+        self.blip = BlipForConditionalGeneration.from_pretrained(self.model_name).to(device)
+        self.processor = BlipProcessor.from_pretrained(self.model_name)
+        # 冻结BLIP的参数
+        for param in self.blip.parameters():
+            param.requires_grad = False
     
-  def forward(self, x_context, x_body):
+  def forward(self, x_context, x_body, x_face, has_face):
+    # 确保BLIP模型已初始化
+    self.init_blip(x_context.device)
+    
     # 处理context图像的BLIP特征
     with torch.no_grad():
         # 转换为PIL图像列表
@@ -81,18 +94,27 @@ class Emotic(nn.Module):
     # 使用ResNet处理context特征
     context_features = self.resnet_context(x_context)
     context_features = context_features.view(context_features.size(0), -1)
-
+    
     # 使用ResNet处理body特征
     body_features = self.resnet_body(x_body)
     body_features = body_features.view(body_features.size(0), -1)
-
+    
+    # 使用ResNet处理face特征
+    face_features = self.resnet_face(x_face)
+    face_features = face_features.view(face_features.size(0), -1)
+    
+    # 根据has_face调整face_features的权重
+    has_face = has_face.view(-1, 1)
+    face_features = face_features * has_face
+    
     # 转换特征维度
     blip_features = self.blip_transform(blip_features)
     resnet_context_features = self.resnet_context_transform(context_features)
-    resnet_bbox_features = self.resnet_bbox_transform(body_features)
+    resnet_body_features = self.resnet_body_transform(body_features)
+    resnet_face_features = self.resnet_face_transform(face_features)
     
     # 特征融合
-    combined_features = torch.cat([blip_features, resnet_context_features, resnet_bbox_features], dim=1)
+    combined_features = torch.cat([blip_features, resnet_context_features, resnet_body_features, resnet_face_features], dim=1)
     
     # 通过融合层和分类器
     output = self.fusion(combined_features)

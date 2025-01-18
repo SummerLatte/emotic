@@ -54,15 +54,16 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
         
         #train models for one epoch 
         train_iterator = tqdm(train_loader, desc=f'Epoch {e+1}/{args.epochs} [Train]', leave=False)
-        for images_context, images_body, labels_cat, labels_cont in train_iterator:
+        for images_context, images_body, images_face, has_face, labels_cat, labels_cont in train_iterator:
             images_context = images_context.to(device)
             images_body = images_body.to(device)
+            images_face = images_face.to(device)
+            has_face = has_face.to(device)
             labels_cat = labels_cat.to(device)
-            labels_cont = labels_cont.to(device)
 
             opt.zero_grad()
 
-            pred_cat = emotic_model(images_context, images_body)
+            pred_cat = emotic_model(images_context, images_body, images_face, has_face)
             loss = criterion(pred_cat, labels_cat)
             
             running_loss += loss.item()
@@ -82,7 +83,7 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
             print ('epoch = %d loss = %.4f cat loss = %.4f cont_loss = %.4f' %(e, running_loss, running_cat_loss, running_cont_loss))
             print('Training metrics:')
             train_ap = test_scikit_ap(train_cat_preds, train_cat_labels, ind2cat, train_writer, e)
-
+            
         train_writer.add_scalar('losses/total_loss', running_loss, e)
         
         running_loss = 0.0 
@@ -96,13 +97,14 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
         with torch.no_grad():
             #validation for one epoch
             val_iterator = tqdm(val_loader, desc=f'Epoch {e+1}/{args.epochs} [Val]', leave=False)
-            for images_context, images_body, labels_cat, labels_cont in val_iterator:
+            for images_context, images_body, images_face, has_face, labels_cat, labels_cont in val_iterator:
                 images_context = images_context.to(device)
                 images_body = images_body.to(device)
+                images_face = images_face.to(device)
+                has_face = has_face.to(device)
                 labels_cat = labels_cat.to(device)
-                labels_cont = labels_cont.to(device)
 
-                pred_cat = emotic_model(images_context, images_body)
+                pred_cat = emotic_model(images_context, images_body, images_face, has_face)
                 loss = criterion(pred_cat, labels_cat)
                 
                 running_loss += loss.item()
@@ -158,22 +160,28 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     # Load preprocessed data from npy files
     train_context = np.load(os.path.join(args.data_path, 'train_context_arr.npy'))
     train_body = np.load(os.path.join(args.data_path, 'train_body_arr.npy'))
+    train_face = np.load(os.path.join(args.data_path, 'train_face_arr.npy'))
+    train_has_face = np.load(os.path.join(args.data_path, 'train_has_face.npy'))
     train_cat = np.load(os.path.join(args.data_path, 'train_cat_arr.npy'))
     train_cont = np.load(os.path.join(args.data_path, 'train_cont_arr.npy'))
 
     val_context = np.load(os.path.join(args.data_path, 'val_context_arr.npy'))
     val_body = np.load(os.path.join(args.data_path, 'val_body_arr.npy'))
+    val_face = np.load(os.path.join(args.data_path, 'val_face_arr.npy'))
+    val_has_face = np.load(os.path.join(args.data_path, 'val_has_face.npy'))
     val_cat = np.load(os.path.join(args.data_path, 'val_cat_arr.npy'))
     val_cont = np.load(os.path.join(args.data_path, 'val_cont_arr.npy'))
 
     test_context = np.load(os.path.join(args.data_path, 'test_context_arr.npy'))
     test_body = np.load(os.path.join(args.data_path, 'test_body_arr.npy'))
+    test_face = np.load(os.path.join(args.data_path, 'test_face_arr.npy'))
+    test_has_face = np.load(os.path.join(args.data_path, 'test_has_face.npy'))
     test_cat = np.load(os.path.join(args.data_path, 'test_cat_arr.npy'))
     test_cont = np.load(os.path.join(args.data_path, 'test_cont_arr.npy'))
 
-    print ('train ', 'context ', train_context.shape, 'body', train_body.shape, 'cat ', train_cat.shape, 'cont', train_cont.shape)
-    print ('val ', 'context ', val_context.shape, 'body', val_body.shape, 'cat ', val_cat.shape, 'cont', val_cont.shape)
-    print ('test ', 'context ', test_context.shape, 'body', test_body.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)
+    print ('train ', 'context ', train_context.shape, 'body', train_body.shape, 'face', train_face.shape, 'has_face', train_has_face.shape, 'cat ', train_cat.shape, 'cont', train_cont.shape)
+    print ('val ', 'context ', val_context.shape, 'body', val_body.shape, 'face', val_face.shape, 'has_face', val_has_face.shape, 'cat ', val_cat.shape, 'cont', val_cont.shape)
+    print ('test ', 'context ', test_context.shape, 'body', test_body.shape, 'face', test_face.shape, 'has_face', test_has_face.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)
 
     # Initialize Dataset and DataLoader 
     train_transform = transforms.Compose([transforms.ToPILImage(),
@@ -181,22 +189,28 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                std=[0.229, 0.224, 0.225])])
+    
     test_transform = transforms.Compose([transforms.ToPILImage(),
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                std=[0.229, 0.224, 0.225])])
 
-    train_dataset = Emotic_PreDataset(train_context, train_body, train_cat, train_cont, train_transform, context_norm, body_norm)
-    val_dataset = Emotic_PreDataset(val_context, val_body, val_cat, val_cont, test_transform, context_norm, body_norm)
+    train_dataset = Emotic_PreDataset(train_context, train_body, train_face, train_has_face, train_cat, train_cont, \
+                                     train_transform, context_norm, body_norm)
+    val_dataset = Emotic_PreDataset(val_context, val_body, val_face, val_has_face, val_cat, val_cont, \
+                                   test_transform, context_norm, body_norm)
+    test_dataset = Emotic_PreDataset(test_context, test_body, test_face, test_has_face, test_cat, test_cont, \
+                                    test_transform, context_norm, body_norm)
 
-    train_loader = DataLoader(train_dataset, args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, args.batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_dataset, args.batch_size, shuffle=False, num_workers=4)
+    test_loader = DataLoader(test_dataset, args.batch_size, shuffle=False, num_workers=4)
 
-    print ('train loader ', len(train_loader), 'val loader ', len(val_loader))
+    print ('train loader ', len(train_loader), 'val loader ', len(val_loader), 'test loader', len(test_loader))
 
     # 创建Emotic模型
-    emotic_model = Emotic(512, 512)  # ResNet18的特征维度是512
+    emotic_model = Emotic(512, 512, model_size='large')  # ResNet18的特征维度是512
     
     device = torch.device("cuda:%s" %(str(args.gpu)) if torch.cuda.is_available() else "cpu")
 
@@ -207,12 +221,16 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
             'lr': 0.001
         },
         {
-            'params': emotic_model.resnet_body.parameters(),
+            'params': list(emotic_model.resnet_context.parameters()) + 
+                     list(emotic_model.resnet_body.parameters()) +
+                     list(emotic_model.resnet_face.parameters()),
             'lr': 0.00001
         },
         {
             'params': list(emotic_model.blip_transform.parameters()) + 
-                     list(emotic_model.resnet_bbox_transform.parameters()),
+                     list(emotic_model.resnet_context_transform.parameters()) +
+                     list(emotic_model.resnet_body_transform.parameters()) +
+                     list(emotic_model.resnet_face_transform.parameters()),
             'lr': 0.001
         }
     ]
