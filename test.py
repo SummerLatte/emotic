@@ -91,13 +91,15 @@ def test_data(models, device, test_loader, ind2cat, ind2vad, num_images, result_
         cat_labels = []
         
         test_iterator = tqdm(test_loader, desc='Testing', leave=False)
-        for images_context, images_body, labels_cat, labels_cont in test_iterator:
+        for images_context, images_body, images_face, has_face, labels_cat, labels_cont in test_iterator:
             images_context = images_context.to(device)
             images_body = images_body.to(device)
+            images_face = images_face.to(device)
+            has_face = has_face.to(device)
             labels_cat = labels_cat.to(device)
             labels_cont = labels_cont.to(device)
 
-            pred_cat = emotic_model(images_context, images_body)
+            pred_cat = emotic_model(images_context, images_body, images_face, has_face)
             
             cat_preds.append(pred_cat.cpu().numpy())
             cat_labels.append(labels_cat.cpu().numpy())
@@ -134,6 +136,8 @@ def test_emotic(result_path, model_path, ind2cat, ind2vad, context_norm, body_no
     #Load data preprocessed npy files
     test_context = np.load(os.path.join(args.data_path, 'test_context_arr.npy'))
     test_body = np.load(os.path.join(args.data_path, 'test_body_arr.npy'))
+    test_face = np.load(os.path.join(args.data_path, 'test_face_arr.npy'))
+    test_has_face = np.load(os.path.join(args.data_path, 'test_has_face_arr.npy'))
     test_cat = np.load(os.path.join(args.data_path, 'test_cat_arr.npy'))
     test_cont = np.load(os.path.join(args.data_path, 'test_cont_arr.npy'))
     print ('test ', 'context ', test_context.shape, 'body', test_body.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)
@@ -145,7 +149,7 @@ def test_emotic(result_path, model_path, ind2cat, ind2vad, context_norm, body_no
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                            std=[0.229, 0.224, 0.225])])
-    test_dataset = Emotic_PreDataset(test_context, test_body, test_cat, test_cont, test_transform, context_norm, body_norm)
+    test_dataset = Emotic_PreDataset(test_context, test_body, test_face, test_has_face, test_cat, test_cont, test_transform, context_norm, body_norm)
     test_loader = DataLoader(test_dataset, args.batch_size, shuffle=False)
     print ('test loader ', len(test_loader))
     
