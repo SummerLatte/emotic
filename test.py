@@ -137,7 +137,7 @@ def test_emotic(result_path, model_path, ind2cat, ind2vad, context_norm, body_no
     test_context = np.load(os.path.join(args.data_path, 'test_context_arr.npy'))
     test_body = np.load(os.path.join(args.data_path, 'test_body_arr.npy'))
     test_face = np.load(os.path.join(args.data_path, 'test_face_arr.npy'))
-    test_has_face = np.load(os.path.join(args.data_path, 'test_has_face_arr.npy'))
+    test_has_face = np.load(os.path.join(args.data_path, 'test_has_face.npy'))
     test_cat = np.load(os.path.join(args.data_path, 'test_cat_arr.npy'))
     test_cont = np.load(os.path.join(args.data_path, 'test_cont_arr.npy'))
     print ('test ', 'context ', test_context.shape, 'body', test_body.shape, 'cat ', test_cat.shape, 'cont', test_cont.shape)

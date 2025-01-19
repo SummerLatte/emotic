@@ -225,20 +225,20 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     param_groups = [
         {
             'params': emotic_model.fusion.parameters(),
-            'lr': 0.001
+            'lr': 0.0005
         },
         {
             'params': list(emotic_model.resnet_context.parameters()) + 
                      list(emotic_model.resnet_body.parameters()) +
                      list(emotic_model.resnet_face.parameters()),
-            'lr': 0.00001
+            'lr': 0.000005
         },
         {
             'params': list(emotic_model.blip_transform.parameters()) + 
                      list(emotic_model.resnet_context_transform.parameters()) +
                      list(emotic_model.resnet_body_transform.parameters()) +
                      list(emotic_model.resnet_face_transform.parameters()),
-            'lr': 0.001
+            'lr': 0.0005
         }
     ]
     opt = optim.AdamW(param_groups, weight_decay=0.01)
