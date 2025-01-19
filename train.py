@@ -219,31 +219,39 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     # 创建Emotic模型
     emotic_model = Emotic(512, 512, model_size='large')  # ResNet18的特征维度是512
     
+    # 计算模型参数量和计算量
+    from thop import profile, clever_format
+    input_context = torch.randn(1, 3, 224, 224)
+    input_body = torch.randn(1, 3, 224, 224)
+    input_face = torch.randn(1, 3, 224, 224)
+    has_face = torch.ones(1)
+    
+    macs, params = profile(emotic_model, inputs=(input_context, input_body, input_face, has_face))
+    macs, params = clever_format([macs, params], "%.3f")
+    print(f'模型总参数量: {params}')
+    print(f'模型计算量: {macs}')
+    
     device = torch.device("cuda:%s" %(str(args.gpu)) if torch.cuda.is_available() else "cpu")
 
     # 收集需要训练的参数
     param_groups = [
         {
             'params': emotic_model.fusion.parameters(),
-            'lr': 0.0005
+            'lr': 0.001
         },
         {
-            'params': list(emotic_model.resnet_context.parameters()) + 
-                     list(emotic_model.resnet_body.parameters()) +
-                     list(emotic_model.resnet_face.parameters()),
-            'lr': 0.000005
-        },
-        {
-            'params': list(emotic_model.blip_transform.parameters()) + 
-                     list(emotic_model.resnet_context_transform.parameters()) +
-                     list(emotic_model.resnet_body_transform.parameters()) +
-                     list(emotic_model.resnet_face_transform.parameters()),
+            'params': [p for n, p in emotic_model.named_parameters() 
+                      if any(x in n for x in ['transform', 'attention', 'aggregation'])],
             'lr': 0.0005
         }
     ]
+    
+    # 使用AdamW优化器，增加权重衰减以防止过拟合
     opt = optim.AdamW(param_groups, weight_decay=0.01)
+    
+    # 修改学习率调度器，使用更激进的衰减策略
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        opt, mode='min', factor=0.5, patience=5
+        opt, mode='min', factor=0.5, patience=3, verbose=True
     )
 
     train_writer = SummaryWriter(train_log_path)

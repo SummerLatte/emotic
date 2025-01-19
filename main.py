@@ -9,7 +9,7 @@ from inference import inference_emotic
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=int, default=0, help='gpu id')
-    parser.add_argument('--mode', type=str, default='test', choices=['train', 'test', 'train_test', 'inference'])
+    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'train_test', 'inference'])
     parser.add_argument('--data_path', type=str, default='emotic_pre', help='Path to preprocessed data npy files/ csv files')
     parser.add_argument('--experiment_path', type=str, default='experiment', help='Path to save experiment files (results, models, logs)')
     parser.add_argument('--model_dir_name', type=str, default='models', help='Name of the directory to save models')
@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--continuous_loss_type', type=str, default='Smooth L1', choices=['L2', 'Smooth L1'], help='type of continuous loss')
     parser.add_argument('--discrete_loss_weight_type', type=str, default='dynamic', choices=['dynamic', 'mean', 'static'], help='weight policy for discrete loss')
     parser.add_argument('--epochs', type=int, default=40)
-    parser.add_argument('--batch_size', type=int, default=200) # use batch size = double(categorical emotion classes)
+    parser.add_argument('--batch_size', type=int, default=128) # use batch size = double(categorical emotion classes)
     # Generate args
     args = parser.parse_args()
     return args
