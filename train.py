@@ -36,15 +36,12 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
     best_val_map = 0.0  # 跟踪最佳验证mAP
     
     emotic_model = models
-
     emotic_model.to(device)
 
     print ('starting training')
 
     for e in range(args.epochs):
-        running_loss = 0.0 
-        running_cat_loss = 0.0 
-        running_cont_loss = 0.0
+        running_loss = 0.0
         
         # 用于存储训练阶段的预测和标签
         train_cat_preds = []
@@ -74,13 +71,16 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
             
             loss.backward()
             opt.step()
+            
+            # 更新进度条
+            train_iterator.set_postfix({'loss': f'{loss.item():.4f}'})
 
         # 计算训练阶段的mAP
         train_cat_preds = np.concatenate(train_cat_preds, axis=0).transpose()
         train_cat_labels = np.concatenate(train_cat_labels, axis=0).transpose()
         
         if e % 1 == 0: 
-            print ('epoch = %d loss = %.4f cat loss = %.4f cont_loss = %.4f' %(e, running_loss, running_cat_loss, running_cont_loss))
+            print(f'epoch = {e} loss = {running_loss:.4f}')
             print('Training metrics:')
             train_ap = test_scikit_ap(train_cat_preds, train_cat_labels, ind2cat, train_writer, e)
             
@@ -112,13 +112,16 @@ def train_data(opt, scheduler, models, device, train_loader, val_loader, train_w
                 # 收集验证阶段的预测和标签
                 val_cat_preds.append(pred_cat.cpu().numpy())
                 val_cat_labels.append(labels_cat.cpu().numpy())
+                
+                # 更新进度条
+                val_iterator.set_postfix({'loss': f'{loss.item():.4f}'})
 
         # 计算验证阶段的mAP
         val_cat_preds = np.concatenate(val_cat_preds, axis=0).transpose()
         val_cat_labels = np.concatenate(val_cat_labels, axis=0).transpose()
 
         if e % 1 == 0:
-            print ('epoch = %d validation loss = %.4f cat loss = %.4f cont loss = %.4f ' %(e, running_loss, running_cat_loss, running_cont_loss))
+            print(f'epoch = {e} validation loss = {running_loss:.4f}')
             print('Validation metrics:')
             val_ap = test_scikit_ap(val_cat_preds, val_cat_labels, ind2cat, val_writer, e)
             val_map = val_ap.mean()  # 计算平均AP
@@ -234,14 +237,19 @@ def train_emotic(result_path, model_path, train_log_path, val_log_path, ind2cat,
     device = torch.device("cuda:%s" %(str(args.gpu)) if torch.cuda.is_available() else "cpu")
 
     # 收集需要训练的参数
+    transform_attention_params = [
+        p for n, p in emotic_model.named_parameters() 
+        if any(x in n for x in ['transform', 'attention', 'aggregation'])
+        and not any(x in n for x in ['transformer', 'classifier'])
+    ]
+    
     param_groups = [
         {
-            'params': emotic_model.fusion.parameters(),
+            'params': list(emotic_model.transformer.parameters()) + list(emotic_model.classifier.parameters()),
             'lr': 0.001
         },
         {
-            'params': [p for n, p in emotic_model.named_parameters() 
-                      if any(x in n for x in ['transform', 'attention', 'aggregation'])],
+            'params': transform_attention_params,
             'lr': 0.0005
         }
     ]
