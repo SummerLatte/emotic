@@ -5,3 +5,4 @@ emotic_pre
 emotic_pre.7z
 face_check_results
 face_detection_results.npy
+*.zip

@@ -75,32 +75,73 @@ class FeatureAggregation(nn.Module):
         weighted_feature = (x * attn_weights).sum(dim=1)  # [B, C]
         return weighted_feature
 
-class TransformerEncoder(nn.Module):
-    def __init__(self, dim, num_heads=8, num_layers=2, mlp_ratio=4, dropout=0.1):
+class MultiScaleTransformer(nn.Module):
+    def __init__(self, dim, num_heads=8, mlp_ratio=4, dropout=0.1):
         super().__init__()
-        self.layers = nn.ModuleList([
-            nn.ModuleDict({
-                'attention': nn.MultiheadAttention(dim, num_heads, dropout=dropout, batch_first=True),
-                'norm1': nn.LayerNorm(dim),
-                'norm2': nn.LayerNorm(dim),
-                'mlp': nn.Sequential(
-                    nn.Linear(dim, dim * mlp_ratio),
-                    nn.GELU(),
-                    nn.Dropout(dropout),
-                    nn.Linear(dim * mlp_ratio, dim)
-                )
-            }) for _ in range(num_layers)
-        ])
         
+        # 第一阶段：原始维度处理
+        self.stage1 = nn.ModuleDict({
+            'attention': nn.MultiheadAttention(dim, num_heads, dropout=dropout, batch_first=True),
+            'norm1': nn.LayerNorm(dim),
+            'norm2': nn.LayerNorm(dim),
+            'mlp': nn.Sequential(
+                nn.Linear(dim, dim * mlp_ratio),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(dim * mlp_ratio, dim)
+            )
+        })
+        
+        # 第二阶段：降维处理
+        self.down_proj = nn.Linear(dim, dim // 2)
+        self.stage2 = nn.ModuleDict({
+            'attention': nn.MultiheadAttention(dim // 2, num_heads // 2, dropout=dropout, batch_first=True),
+            'norm1': nn.LayerNorm(dim // 2),
+            'norm2': nn.LayerNorm(dim // 2),
+            'mlp': nn.Sequential(
+                nn.Linear(dim // 2, (dim // 2) * mlp_ratio),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear((dim // 2) * mlp_ratio, dim // 2)
+            )
+        })
+        
+        # 特征融合
+        self.fusion = nn.Sequential(
+            nn.Linear(dim + dim // 2, dim),
+            nn.LayerNorm(dim),
+            nn.GELU()
+        )
+        
+        # 循环移位的步长
+        self.shift_size = 2
+        
+    def shift_features(self, x):
+        # 实现循环移位
+        return torch.roll(x, shifts=-self.shift_size, dims=1)
+    
     def forward(self, x):
-        for layer in self.layers:
-            # Self-attention
-            attn_out, _ = layer['attention'](x, x, x)
-            x = layer['norm1'](x + attn_out)
-            
-            # MLP
-            mlp_out = layer['mlp'](x)
-            x = layer['norm2'](x + mlp_out)
+        # 第一阶段：原始维度
+        # Self-attention with original features
+        attn_out1, _ = self.stage1['attention'](x, x, x)
+        x1 = self.stage1['norm1'](x + attn_out1)
+        mlp_out1 = self.stage1['mlp'](x1)
+        x1 = self.stage1['norm2'](x1 + mlp_out1)
+        
+        # 第二阶段：降维 + 移位窗口
+        x2 = self.down_proj(x)
+        x2_shifted = self.shift_features(x2)
+        
+        # Self-attention with shifted and downsampled features
+        attn_out2, _ = self.stage2['attention'](x2_shifted, x2_shifted, x2_shifted)
+        x2 = self.stage2['norm1'](x2_shifted + attn_out2)
+        mlp_out2 = self.stage2['mlp'](x2)
+        x2 = self.stage2['norm2'](x2 + mlp_out2)
+        
+        # 特征融合
+        x = torch.cat([x1, x2], dim=-1)
+        x = self.fusion(x)
+        
         return x
 
 class Emotic(nn.Module):
@@ -145,11 +186,10 @@ class Emotic(nn.Module):
         self.feature_dim = 128
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.feature_dim))
         
-        # Transformer编码器
-        self.transformer = TransformerEncoder(
+        # 将TransformerEncoder替换为MultiScaleTransformer
+        self.transformer = MultiScaleTransformer(
             dim=self.feature_dim,
             num_heads=8,
-            num_layers=2,
             dropout=0.1
         )
         
